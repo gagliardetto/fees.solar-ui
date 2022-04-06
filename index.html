@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+    <title>fees.solar — Solana fees calculator</title>
+    <!-- Load required Bootstrap and BootstrapVue CSS -->
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="https://unpkg.com/bootstrap@4.5.3/dist/css/bootstrap.min.css"
+      crossorigin="anonymous"
+    />
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="https://unpkg.com/bootstrap-vue@2.21.2/dist/bootstrap-vue.min.css"
+      crossorigin="anonymous"
+    />
+    <!-- Load polyfills to support older browsers -->
+    <script
+      src="https://unpkg.com/babel-polyfill@6.26.0/dist/polyfill.min.js?features=es2015%2CIntersectionObserver"
+      crossorigin="anonymous"
+    ></script>
+    <!-- Load Vue followed by BootstrapVue -->
+    <script
+      src="https://unpkg.com/vue@2.6.12/dist/vue.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://unpkg.com/bootstrap-vue@2.21.2/dist/bootstrap-vue.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <!-- Load the following for BootstrapVueIcons support -->
+    <script
+      src="https://unpkg.com/bootstrap-vue@2.21.2/dist/bootstrap-vue-icons.min.js"
+      crossorigin="anonymous"
+    ></script>
+    <style type="text/css">
+    .hidden {
+        display: none;
+    }
+
+    [v-cloak] {
+        display: none;
+    }
+
+    .sol-color {
+        color: rgb(153, 69, 255);
+    }
+
+    .progress-bar {
+        background-color: rgb(153, 69, 255);
+    }
+
+    .cursor-pointer {
+        cursor: pointer;
+    }
+
+    .id-input-box {
+        height: 3em;
+        font-size: 1em;
+        width: 80vw;
+        padding: 1.2em;
+        border-style: dashed;
+        border-width: thick;
+        border-right: 0px;
+    }
+
+    .id-input-btn {
+        background-color: rgb(153, 69, 255);
+        font-weight: bolder;
+        background-image: none;
+        font-family: monospace;
+        height: 3em;
+        font-size: 1.01em;
+        padding-left: 0.8em;
+        padding-right: 0.8em;
+        border-top-left-radius: 0px;
+        border-bottom-left-radius: 0px;
+    }
+
+    .id-input-btn:hover {
+        background-color: rgb(153, 40, 255);
+    }
+
+    .points>p {
+        margin-left: 0.6em;
+    }
+    </style>
+</head>
+
+<body>
+    <div id="fees-app" v-cloak class="mt-4 mx-auto">
+        <b-container fluid>
+            <div v-if="isBusy.feeFetcher" style="text-align: center">
+                <h1>Fetching transactions ...</h1>
+                <b-progress ref="creationProgressBar" :max="creationProgressValues.max" height="2rem" striped animated v-if="creationProgressValues.value > 0" class="w-50 mb-2 mx-auto text-center">
+                    <b-progress-bar :value="creationProgressValues.value">
+                        <span>
+                            <strong>{{ creationProgressValues.value.toFixed(2) }}%</strong>
+                            <strong>{{ creationProgressValues.label }}</strong>
+                        </span>
+                    </b-progress-bar>
+                </b-progress>
+            </div>
+            <div v-if="!!!isBusy.feeFetcher && !!!webResult" style="text-align: center">
+                <h3>View stats about a <b class="sol-color">Solana</b> wallet</h3>
+                <hr>
+                <h1 class="mx-auto text-center">
+                    Pass an address via the URL (<a href="/?address=6jPsQCeF1RFB3Y8NbnpPbbi34xvEMXtnL8TFYBmGhFTk">like this</a>).
+                </h1>
+                <br>
+                <br>
+                <h1 class="mx-auto text-center">
+                    fees.solar/?address=
+                </h1>
+                <h3 class="mx-auto text-center">
+                    <div class="input-group mb-3">
+                        <input type="text" v-model="tmpAddress" class="form-control id-input-box" @mounted="$el.focus()" required minlength="30" spellcheck="false" v-on:keyup.enter="redirect(tmpAddress)" :state="validation" placeholder="Paste your wallet address here" aria-label="Paste your wallet address here">
+                        <div class="input-group-append">
+                            <b-button @click="redirect(tmpAddress)" class="cursor-pointer id-input-btn btn" type="button">Go</b-button>
+                        </div>
+                    </div>
+                </h3>
+            </div>
+            <div v-if="!isBusy.feeFetcher && !!webResult" class="px-1 py-1 my-1 mb-5 pb-5">
+                <div class="text-center">
+                    <h1>You've spent <b class="sol-color">◎{{webResult.Total.FeesSol}}</b> on Solana transaction fees.
+                        <br>
+                        Right now, that's <b class="sol-color">${{(webResult.Total.FeesSol*webResult.SolPriceUSD).toFixed(2)}}</b>.</h1>
+                    <br>
+                    <h1>
+                        You used <b class="sol-color">{{webResult.Total.FeesLamports}}</b> lamports in fees to send
+                        <br>
+                        <b class="sol-color">{{webResult.Total.NumTransactions}}</b> transactions, with an average
+                        <br>
+                        fee of <b class="sol-color">{{(webResult.Total.FeesLamports/webResult.Total.NumTransactions).toFixed(0)}}</b> lamports.</h1>
+                    <br>
+                    <h1><b class="sol-color">{{webResult.Failed.NumTransactions}}</b> of them failed, costing you <br><b class="sol-color">◎{{webResult.Failed.FeesSol}}</b> (${{(webResult.Failed.FeesSol*webResult.SolPriceUSD).toFixed(2)}}).</h1>
+                    <br>
+                    <small class="text-center bg-light text-muted">NOTE: rent is not (yet) included in the calculation.</small>
+                    <hr>
+                </div>
+                <div class="row">
+                    <div class="col-lg-2 col-xs-0">
+                    </div>
+                    <div class="col-lg-10 col-xs-12">
+                        <h2 class="pt-2 pl-5 ml-5 mb-5 text-left">
+                            Your transactions consumed a total of <b class="sol-color">{{(webResult.Total.NumTransactions * 1837).toLocaleString() }}</b> <b>Joules</b> (or {{webResult.Total.NumTransactions * 0.00051}} kWh) of energy.
+                        </h2>
+                        <h3 class="pl-5 ml-5 text-left">
+                            <p>
+                                <span class="pb-3">In <b>total</b>, that's about:</span>
+                            </p>
+                            <span class="pl-2 points">
+                                <p>
+                                    <b class="sol-color">·</b> <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 1080).toFixed(0) }}</b> Google searches
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 36000).toFixed(2) }}</b> hours of keeping a LED light bulb on
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 44676).toFixed(2) }}</b> full charges of an iPhone 13
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 46800).toFixed(2) }}</b> hours of working with a computer and monitor
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 126000).toFixed(2) }}</b> eth2 transactions
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 540000).toFixed(2) }}</b> hours of watching television on a 40 inch+ LCD TV
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 708840).toFixed(2) }}</b> hours of playing a PlayStation 5 game
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 810000).toFixed(2) }}</b> hours of running a refrigerator
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 12600000).toFixed(4) }}</b> hours of central air conditioning
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or using <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 121320000).toFixed(4) }}</b> gallons of gasoline
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 692820000).toFixed(6) }}</b> Ethereum transactions
+                                </p>
+                                <p>
+                                    <b class="sol-color">·</b> or <b class="sol-color">{{((webResult.Total.NumTransactions * 1837) / 6995592000).toFixed(6) }}</b> Bitcoin transactions.
+                                </p>
+                            </span>
+                        </h3>
+                        <br>
+                        <small class="text-center bg-light text-muted"><a href="https://solana.com/news/solana-energy-usage-report-november-2021" target="_blank">Source: Solana’s Energy Use Report: November 2021</a></small>
+                    </div>
+                </div>
+                <br>
+                <br>
+                <br>
+                <br>
+                <br>
+            </div>
+        </b-container>
+        <footer class="text-center text-lg-start bg-light text-muted fixed-bottom" v-if="!!!isBusy.feeFetcher">
+            <div class="text-center p-4" style="background-color: rgba(233, 236, 239, 0.005);">
+                <small>Buy me a ☕/🍺: 6jPsQCeF1RFB3Y8NbnpPbbi34xvEMXtnL8TFYBmGhFTk</small>
+            </div>
+        </footer>
+    </div>
+    <script crossorigin="anonymous" src="https://unpkg.com/@solana/web3.js@latest/lib/index.iife.min.js"></script>
+    <script crossorigin="anonymous" src="https://unpkg.com/@solana/spl-token@0.1.8/lib/index.iife.min.js"></script>
+    <script crossorigin="anonymous" src="https://bundle.run/buffer@6.0.3"></script>
+    <script>
+    console.log(solanaWeb3);
+
+    window.Buffer = buffer.Buffer;
+
+    const { PublicKey, clusterApiUrl, Connection } = solanaWeb3;
+
+    function isCustomRPC() {
+        let is =
+            'rpc' in
+            Object.fromEntries(
+                new URLSearchParams(window.location.search).entries(),
+            );
+        return is;
+    }
+
+    function getCustomRPCParam() {
+        let params = Object.fromEntries(
+            new URLSearchParams(window.location.search).entries(),
+        );
+        return params.rpc
+    }
+
+    let connection = null;
+    if (isCustomRPC()) {
+        connection = new Connection(getCustomRPCParam());
+    } else {
+        // connection = new Connection(clusterApiUrl('mainnet-beta'));
+        connection = new Connection("https://ssc-dao.genesysgo.net");
+    }
+
+    function cc(...elems) {
+        return elems.join("-")
+    }
+
+    function ccs(...elems) {
+        return elems.join(" ")
+    }
+
+    function len(elem) {
+        if (elem == null) { return 0 }
+        return elem.length
+    }
+
+    function marshal(obj) {
+        return JSON.stringify(obj)
+    }
+
+    async function getAllSignaturesForAddress(targetPubkey, callback1, callback2) {
+        let allSignatures = [];
+        let lastSig = null;
+        for (;;) {
+            let opts = {};
+
+            if (lastSig != null) {
+                opts.before = lastSig.signature;
+            }
+            let res = await connection.getSignaturesForAddress(targetPubkey, opts);
+
+            res.forEach(function(sig, sigIndex) {
+                allSignatures.push(sig.signature);
+            });
+
+            console.log("Fetching transaction list; so far got", allSignatures.length);
+
+            callback1(2);
+            callback2(0, allSignatures.length.toLocaleString() + " transactions so far (step 1 of 2)");
+            if (res.length < 1000) {
+                break
+            }
+            // // TODO: remove
+            // if (allSignatures.length > 100000) {
+            //     break
+            // }
+            lastSig = res[res.length - 1]
+        }
+
+        return allSignatures
+    }
+
+    function makeToast(variant = null, title, body) {
+        app.$bvToast.toast(
+            body, {
+                title: title,
+                variant: variant,
+                solid: true,
+                autoHideDelay: 50000,
+            })
+    }
+
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function splitIntoChunksOfNSize(chunkSize, slice) {
+        let divided = [];
+
+        for (let i = 0; i < slice.length; i += chunkSize) {
+            let end = i + chunkSize;
+
+            if (end > slice.length) {
+                end = slice.length
+            }
+
+            divided = divided.concat([slice.slice(i, end)])
+        }
+
+        return divided
+    }
+
+
+    function isConcurrencySet() {
+        let is =
+            'w' in
+            Object.fromEntries(
+                new URLSearchParams(window.location.search).entries(),
+            );
+        return is;
+    }
+
+    function getConcurrencyParam() {
+        let params = Object.fromEntries(
+            new URLSearchParams(window.location.search).entries(),
+        );
+        return parseInt(params.w)
+    }
+
+    async function splitIntoChunksOfNSizeWithCallback(chunkSize, slice, callback) {
+        let promises = [];
+        let concurrency = 1;
+        if (isConcurrencySet()) {
+            concurrency = getConcurrencyParam();
+        }
+        for (let i = 0; i < slice.length; i += chunkSize) {
+            let end = i + chunkSize;
+
+            if (end > slice.length) {
+                end = slice.length
+            }
+
+            promises.push(callback(slice.slice(i, end)))
+            if (promises.length >= concurrency) {
+                await Promise.all(promises);
+                promises = [];
+            }
+        }
+        if (promises.length > 0) {
+            await Promise.all(promises);
+        }
+    }
+
+    function newGetTransactionRequest(sig) {
+        let req = {
+            methodName: "getTransaction",
+            args: [sig, { "commitment": "finalized" }]
+        }
+        return req
+    }
+
+    function sigListToTransactionBatches(signatures, chunkSize) {
+
+        let reqs = [];
+
+        signatures.forEach(function(sig, sigIndex) {
+            let req = newGetTransactionRequest(
+                sig,
+                sigIndex,
+            )
+
+            reqs = reqs.concat(req)
+        });
+
+
+        return splitIntoChunksOfNSize(chunkSize, reqs)
+    }
+
+    function signaturesToBatch(signatures) {
+        let reqs = [];
+
+        signatures.forEach(function(sig, sigIndex) {
+            let req = newGetTransactionRequest(
+                sig,
+                sigIndex,
+            )
+
+            reqs = reqs.concat(req)
+        });
+        return reqs
+    }
+
+    async function retry(fn, n) {
+        for (let i = 0; i < n; i++) {
+            try {
+                return await fn();
+            } catch {
+                await sleep(1000 * Math.pow(2, i))
+            }
+        }
+
+        throw new Error(`Failed retrying ${n} times`);
+    }
+
+    async function getFeesForPubkey(target, eachBatchCallback, barValueReset) {
+        const allSignatures = await getAllSignaturesForAddress(target, eachBatchCallback, barValueReset);
+        console.log(allSignatures);
+        const numSignatures = allSignatures.length;
+        console.log("There are", numSignatures, "transactions.");
+
+        const batchSize = 200;
+        const numBatches = Math.ceil(numSignatures / batchSize);
+
+        console.log("Going to fetch", allSignatures.length, "transactions in", numBatches, "batches.");
+        barValueReset(25, "Fetching transaction fee data...");
+
+        let webResult = {
+            Total: {
+                NumTransactions: 0,
+                FeesLamports: 0,
+                FeesSol: 0.0
+            },
+            Failed: {
+                NumTransactions: 0,
+                FeesLamports: 0,
+                FeesSol: 0.0
+            },
+            SolPriceUSD: 0.0
+        }
+
+        const stepSize = 75 / numBatches;
+
+        let batchIndex = 0;
+
+        {
+            await splitIntoChunksOfNSizeWithCallback(batchSize, allSignatures,
+                async function(sigs) {
+                    try {
+                        const batch = signaturesToBatch(sigs);
+
+                        // let batchResp = await connection._rpcBatchRequest(batch);
+                        let batchResp = await retry(async function() { return await connection._rpcBatchRequest(batch) }, 10);
+
+                        batchIndex++;
+                        console.log("batch ", batchIndex, "/", numBatches, ":", batchResp);
+
+                        batchResp.forEach(function(batchRespItem, batchRespItemIndex) {
+
+                            let parsedResponse = batchRespItem.result;
+                            if (parsedResponse == null || !('transaction' in parsedResponse) || parsedResponse.transaction == null || !('message' in parsedResponse.transaction) || parsedResponse.transaction.message == null || !('accountKeys' in parsedResponse.transaction.message) || parsedResponse.transaction.message.accountKeys == null || parsedResponse.transaction.message.accountKeys.length == 0) {
+                                return
+                            }
+                            if (new PublicKey(parsedResponse.transaction.message.accountKeys[0]).equals(target)) {
+                                webResult.Total.FeesLamports += parsedResponse.meta.fee;
+                                webResult.Total.NumTransactions++;
+                                if (parsedResponse.meta.err != null) {
+                                    webResult.Failed.FeesLamports += parsedResponse.meta.fee;
+                                    webResult.Failed.NumTransactions++;
+                                }
+                            }
+                        });
+
+                        barValueReset(
+                            15 + (stepSize * batchIndex),
+                            ccs("Got", (batchIndex * batchSize).toLocaleString(), "/", numSignatures.toLocaleString(), "transactions (step 2 of 2)"),
+                        );
+                    } catch (exception) {
+                        makeToast("danger", "Fatal error", exception);
+                    }
+                })
+        }
+
+        return webResult
+    }
+
+    window.app = new Vue({
+        el: '#fees-app',
+        data: {
+            tmpAddress: null,
+            pricing: { usd: 0, eur: 0 },
+            webResult: null,
+            isBusy: {
+                feeFetcher: false
+            },
+            creationProgressValues: {
+                value: 0,
+                max: 100,
+                label: '',
+            },
+        },
+        created() {
+            // TODO: check if address param is set; if is set, then fetch.
+            this.fetchSOL_fiat();
+
+            if (this.addressIsSpecified()) {
+                let address = this.toPublicKey(this.getAddressParam());
+                this.loadFees(address);
+            }
+        },
+        updated() {},
+        mounted() {
+
+        },
+        computed: {
+            validation() {
+                return this.tmpAddress != null && this.tmpAddress.length > 10
+            }
+        },
+        methods: {
+            cc: cc,
+            len: len,
+            marshal: marshal,
+            makeToast: makeToast,
+            sleep: sleep,
+            redirect(address) {
+                if (address != null && address.length > 10) {
+                    window.location.href = '/?address=' + address;
+                }
+            },
+            async loadFees(target) {
+                this.$data.isBusy.feeFetcher = true;
+
+                this.$data.creationProgressValues.value = 3;
+
+                let self = this;
+
+                let webResult = await getFeesForPubkey(
+                    target,
+                    function(stepSize) {
+                        self.$data.creationProgressValues.value += stepSize;
+                    },
+                    function(value, label) {
+                        if (value > 0) {
+                            self.$data.creationProgressValues.value = value;
+                        }
+                        self.$data.creationProgressValues.label = label;
+                    },
+                );
+
+                webResult.Total.FeesSol = webResult.Total.FeesLamports / solanaWeb3.LAMPORTS_PER_SOL;
+                webResult.Failed.FeesSol = webResult.Failed.FeesLamports / solanaWeb3.LAMPORTS_PER_SOL;
+
+                webResult.SolPriceUSD = this.$data.pricing.usd;
+
+                console.log(webResult);
+                this.$data.webResult = webResult;
+                this.$data.isBusy.feeFetcher = false;
+            },
+            toPublicKey(pk) {
+                return new PublicKey(pk)
+            },
+            fetchSOL_fiat() {
+                let url =
+                    'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd,eur';
+                fetch(url)
+                    .then((response) => {
+                        if (response.ok) {
+                            return response.json();
+                        } else {
+                            throw response;
+                        }
+                    })
+                    .then((json) => {
+                        this.pricing = json.solana;
+                    })
+                    .catch((error) => {
+                        console.error('Error:', error);
+                        error.json().then((body) => {
+                            console.error(body.error);
+                        });
+                    });
+            },
+            addressIsSpecified() {
+                let is =
+                    'address' in
+                    Object.fromEntries(
+                        new URLSearchParams(window.location.search).entries(),
+                    );
+                return is;
+            },
+            getAddressParam() {
+                let params = Object.fromEntries(
+                    new URLSearchParams(window.location.search).entries(),
+                );
+                return params.address
+            },
+
+        }
+    });
+    </script>
+    <script type="text/javascript">
+    Vue.component('ii-item-card', {
+        methods: {},
+        props: ['item'],
+        template: "#ii-item-card-template"
+    });
+    </script>
+    <script type="text/x-template" id="ii-item-card-template">
+        <div>
+          {{item.Title}}
+        </div>
+    </script>
+</body>
+
+</html>
